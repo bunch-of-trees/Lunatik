@@ -76,16 +76,38 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
     // MARK: - Touch / Swipe Handling
 
+    private let swipeThreshold: CGFloat = 18
+    private var swipeHandled = false
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
         touchStart = touch.location(in: self)
         touchStartTime = touch.timestamp
+        swipeHandled = false
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard !swipeHandled, !isGameOver,
+              let touch = touches.first, let start = touchStart else { return }
+        let current = touch.location(in: self)
+        let dx = current.x - start.x
+        let dy = current.y - start.y
+
+        // Fire immediately once the swipe clears the threshold
+        if abs(dx) > swipeThreshold || abs(dy) > swipeThreshold {
+            swipeHandled = true
+            if abs(dx) > abs(dy) {
+                if dx > 0 { luna.moveRight() }
+                else { luna.moveLeft() }
+            } else {
+                if dy > 0 { luna.jump() }
+                else { luna.slide() }
+            }
+        }
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first, let start = touchStart else { return }
-        let end = touch.location(in: self)
-        let elapsed = touch.timestamp - touchStartTime
         touchStart = nil
 
         if isGameOver {
@@ -93,25 +115,16 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             return
         }
 
+        // If swipe already handled during move, skip
+        if swipeHandled { return }
+
+        // Short tap = jump
+        let end = touch.location(in: self)
         let dx = end.x - start.x
         let dy = end.y - start.y
-        let distance = sqrt(dx * dx + dy * dy)
-
-        // Tap detection (short distance, short time)
-        if distance < 20 && elapsed < 0.25 {
-            // Tap = jump
+        let elapsed = touch.timestamp - touchStartTime
+        if (dx * dx + dy * dy) < 400 && elapsed < 0.25 {
             luna.jump()
-            return
-        }
-
-        let threshold: CGFloat = 25
-
-        if abs(dx) > abs(dy) {
-            if dx > threshold { luna.moveRight() }
-            else if dx < -threshold { luna.moveLeft() }
-        } else {
-            if dy > threshold { luna.jump() }
-            else if dy < -threshold { luna.slide() }
         }
     }
 
