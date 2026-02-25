@@ -17,6 +17,7 @@
 		AA000008002000AA /* GameConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000008001000AA /* GameConfig.swift */; };
 		AA000009002000AA /* ParallaxBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000009001000AA /* ParallaxBackground.swift */; };
 		AA00000A002000AA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA00000A001000AA /* Assets.xcassets */; };
+		AA00000B002000AA /* SoundManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000B001000AA /* SoundManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +32,7 @@
 		AA000008001000AA /* GameConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameConfig.swift; sourceTree = "<group>"; };
 		AA000009001000AA /* ParallaxBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParallaxBackground.swift; sourceTree = "<group>"; };
 		AA00000A001000AA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AA00000B001000AA /* SoundManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -72,6 +74,7 @@
 				AA000006001000AA /* LunaCharacter.swift */,
 				AA000007001000AA /* ObstacleManager.swift */,
 				AA000009001000AA /* ParallaxBackground.swift */,
+				AA00000B001000AA /* SoundManager.swift */,
 				AA00000A001000AA /* Assets.xcassets */,
 			);
 			path = Lunatik;
@@ -155,6 +158,7 @@
 				AA000007002000AA /* ObstacleManager.swift in Sources */,
 				AA000008002000AA /* GameConfig.swift in Sources */,
 				AA000009002000AA /* ParallaxBackground.swift in Sources */,
+				AA00000B002000AA /* SoundManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

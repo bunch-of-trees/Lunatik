@@ -16,14 +16,21 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
     // Swipe tracking
     private var touchStart: CGPoint?
+    private var touchStartTime: TimeInterval = 0
+
+    // Dust particles
+    private var dustTimer: TimeInterval = 0
 
     // MARK: - Scene Lifecycle
 
     override func didMove(to view: SKView) {
-        backgroundColor = SKColor(red: 0.35, green: 0.68, blue: 0.28, alpha: 1.0)
+        backgroundColor = SKColor(red: 0.32, green: 0.65, blue: 0.25, alpha: 1.0)
 
         physicsWorld.gravity = .zero
         physicsWorld.contactDelegate = self
+
+        // Initialize sound engine
+        _ = SoundManager.shared
 
         setupBackground()
         setupLuna()
@@ -49,33 +56,24 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func setupHUD() {
+        // Semi-transparent bar at top
+        let hudBar = SKSpriteNode(
+            color: SKColor(white: 0.0, alpha: 0.25),
+            size: CGSize(width: size.width, height: 55)
+        )
+        hudBar.position = CGPoint(x: size.width / 2, y: size.height - 27)
+        hudBar.zPosition = 99
+        addChild(hudBar)
+
         scoreLabel = SKLabelNode(fontNamed: "AvenirNext-Bold")
-        scoreLabel.fontSize = 28
+        scoreLabel.fontSize = 30
         scoreLabel.fontColor = .white
-        scoreLabel.horizontalAlignmentMode = .right
-        scoreLabel.position = CGPoint(x: size.width - 20, y: size.height - 55)
+        scoreLabel.horizontalAlignmentMode = .center
+        scoreLabel.verticalAlignmentMode = .center
+        scoreLabel.position = CGPoint(x: size.width / 2, y: size.height - 30)
         scoreLabel.zPosition = 100
         scoreLabel.text = "0"
         addChild(scoreLabel)
-
-        let scoreTitle = SKLabelNode(fontNamed: "AvenirNext-Medium")
-        scoreTitle.text = "Score"
-        scoreTitle.fontSize = 14
-        scoreTitle.fontColor = SKColor(white: 1.0, alpha: 0.7)
-        scoreTitle.horizontalAlignmentMode = .right
-        scoreTitle.position = CGPoint(x: size.width - 20, y: size.height - 30)
-        scoreTitle.zPosition = 100
-        addChild(scoreTitle)
-
-        // Shadow for readability
-        let shadow = SKLabelNode(fontNamed: "AvenirNext-Bold")
-        shadow.fontSize = 28
-        shadow.fontColor = SKColor(white: 0.0, alpha: 0.35)
-        shadow.horizontalAlignmentMode = .right
-        shadow.position = CGPoint(x: 1.5, y: -1.5)
-        shadow.zPosition = -1
-        shadow.name = "scoreShadow"
-        scoreLabel.addChild(shadow)
     }
 
     // MARK: - Touch / Swipe Handling
@@ -83,11 +81,13 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
         touchStart = touch.location(in: self)
+        touchStartTime = touch.timestamp
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first, let start = touchStart else { return }
         let end = touch.location(in: self)
+        let elapsed = touch.timestamp - touchStartTime
         touchStart = nil
 
         if isGameOver {
@@ -97,23 +97,23 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
         let dx = end.x - start.x
         let dy = end.y - start.y
-        let threshold: CGFloat = 30
+        let distance = sqrt(dx * dx + dy * dy)
 
-        // Determine swipe direction
+        // Tap detection (short distance, short time)
+        if distance < 20 && elapsed < 0.25 {
+            // Tap = jump
+            luna.jump()
+            return
+        }
+
+        let threshold: CGFloat = 25
+
         if abs(dx) > abs(dy) {
-            // Horizontal swipe
-            if dx > threshold {
-                luna.moveRight()
-            } else if dx < -threshold {
-                luna.moveLeft()
-            }
+            if dx > threshold { luna.moveRight() }
+            else if dx < -threshold { luna.moveLeft() }
         } else {
-            // Vertical swipe
-            if dy > threshold {
-                luna.jump()
-            } else if dy < -threshold {
-                luna.slide()
-            }
+            if dy > threshold { luna.jump() }
+            else if dy < -threshold { luna.slide() }
         }
     }
 
@@ -136,24 +136,46 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
         // Update systems
         background.update(speed: currentSpeed, deltaTime: deltaTime)
-        obstacleManager.update(
-            speed: currentSpeed,
-            deltaTime: deltaTime,
-            lunaLane: luna.currentLane,
-            lunaIsJumping: luna.isJumping
-        )
+        obstacleManager.update(speed: currentSpeed, deltaTime: deltaTime)
 
         // Distance score
         distanceScore += currentSpeed * CGFloat(deltaTime) * 0.01
         updateScore()
+
+        // Dust particles
+        dustTimer += deltaTime
+        if dustTimer > 0.08 {
+            dustTimer = 0
+            spawnDust()
+        }
     }
 
     private func updateScore() {
         let totalScore = score + Int(distanceScore)
         scoreLabel.text = "\(totalScore)"
-        if let shadow = scoreLabel.childNode(withName: "scoreShadow") as? SKLabelNode {
-            shadow.text = "\(totalScore)"
-        }
+    }
+
+    // MARK: - Particles
+
+    private func spawnDust() {
+        guard !luna.isJumping else { return }
+
+        let dust = SKShapeNode(circleOfRadius: CGFloat.random(in: 2...4))
+        dust.fillColor = SKColor(white: 0.7, alpha: CGFloat.random(in: 0.15...0.3))
+        dust.strokeColor = .clear
+        dust.position = CGPoint(
+            x: luna.position.x + CGFloat.random(in: -15...15),
+            y: luna.position.y - GameConstants.lunaSpriteHeight * 0.4 + CGFloat.random(in: -5...5)
+        )
+        dust.zPosition = 45
+        addChild(dust)
+
+        let drift = SKAction.group([
+            SKAction.moveBy(x: CGFloat.random(in: -10...10), y: CGFloat.random(in: 10...25), duration: 0.4),
+            SKAction.fadeOut(withDuration: 0.4),
+            SKAction.scale(to: 0.3, duration: 0.4)
+        ])
+        dust.run(SKAction.sequence([drift, SKAction.removeFromParent()]))
     }
 
     // MARK: - Physics Contact
@@ -165,19 +187,18 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             let obstacleNode = contact.bodyA.categoryBitMask == PhysicsCategory.obstacle
                 ? contact.bodyA.node : contact.bodyB.node
 
-            // If jumping over a jumpable obstacle, skip the hit
+            // Jumping over jumpable obstacles
             if luna.isJumping,
                let jumpable = obstacleNode?.userData?["jumpable"] as? Bool,
                jumpable {
                 return
             }
 
-            // If sliding, dodge tall obstacles
-            if luna.isSliding {
-                return
-            }
+            // Sliding dodges everything
+            if luna.isSliding { return }
 
             handleObstacleHit()
+
         } else if collision == PhysicsCategory.luna | PhysicsCategory.collectible {
             let collectibleNode = contact.bodyA.categoryBitMask == PhysicsCategory.collectible
                 ? contact.bodyA.node : contact.bodyB.node
@@ -189,26 +210,36 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         guard !isGameOver else { return }
         isGameOver = true
 
-        // Flash
-        let flash = SKSpriteNode(color: SKColor(red: 1.0, green: 0.2, blue: 0.15, alpha: 0.35), size: size)
+        SoundManager.shared.playHit()
+
+        // Red flash
+        let flash = SKSpriteNode(color: SKColor(red: 1.0, green: 0.15, blue: 0.1, alpha: 0.35), size: size)
         flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
         flash.zPosition = 200
         addChild(flash)
         flash.run(SKAction.fadeOut(withDuration: 0.3)) { flash.removeFromParent() }
 
-        // Shake
-        let shake = SKAction.sequence([
-            SKAction.moveBy(x: 8, y: 0, duration: 0.03),
-            SKAction.moveBy(x: -16, y: 0, duration: 0.03),
-            SKAction.moveBy(x: 12, y: 0, duration: 0.03),
-            SKAction.moveBy(x: -8, y: 0, duration: 0.03),
-            SKAction.moveBy(x: 4, y: 0, duration: 0.03),
-        ])
-        scene?.run(shake)
+        // Camera shake
+        let shakeAmount: CGFloat = 10
+        let shakeDur: TimeInterval = 0.025
+        var shakeActions: [SKAction] = []
+        for _ in 0..<6 {
+            let dx = CGFloat.random(in: -shakeAmount...shakeAmount)
+            let dy = CGFloat.random(in: -shakeAmount...shakeAmount)
+            shakeActions.append(SKAction.moveBy(x: dx, y: dy, duration: shakeDur))
+            shakeActions.append(SKAction.moveBy(x: -dx, y: -dy, duration: shakeDur))
+        }
+        scene?.run(SKAction.sequence(shakeActions))
 
         luna.hitAnimation()
 
-        run(SKAction.wait(forDuration: 0.8)) { [weak self] in
+        // Delayed game over sound
+        run(SKAction.sequence([
+            SKAction.wait(forDuration: 0.3),
+            SKAction.run { SoundManager.shared.playGameOver() }
+        ]))
+
+        run(SKAction.wait(forDuration: 1.0)) { [weak self] in
             self?.showGameOverPrompt()
         }
     }
@@ -216,15 +247,15 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private func showGameOverPrompt() {
         let label = SKLabelNode(fontNamed: "AvenirNext-Bold")
         label.text = "Tap to continue"
-        label.fontSize = 22
+        label.fontSize = 24
         label.fontColor = .white
         label.position = CGPoint(x: size.width / 2, y: size.height / 2)
         label.zPosition = 200
         addChild(label)
 
         let pulse = SKAction.sequence([
-            SKAction.fadeAlpha(to: 0.3, duration: 0.6),
-            SKAction.fadeAlpha(to: 1.0, duration: 0.6)
+            SKAction.fadeAlpha(to: 0.25, duration: 0.5),
+            SKAction.fadeAlpha(to: 1.0, duration: 0.5)
         ])
         label.run(SKAction.repeatForever(pulse))
     }
@@ -238,7 +269,27 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             score += 1
         }
 
+        SoundManager.shared.playCollect()
         luna.collectAnimation()
+
+        // Sparkle burst
+        for _ in 0..<6 {
+            let spark = SKShapeNode(circleOfRadius: CGFloat.random(in: 2...4))
+            spark.fillColor = SKColor(red: 1, green: 1, blue: CGFloat.random(in: 0.3...0.8), alpha: 1)
+            spark.strokeColor = .clear
+            spark.position = node.position
+            spark.zPosition = 80
+            addChild(spark)
+
+            let angle = CGFloat.random(in: 0...(.pi * 2))
+            let dist = CGFloat.random(in: 20...50)
+            let drift = SKAction.group([
+                SKAction.moveBy(x: cos(angle) * dist, y: sin(angle) * dist, duration: 0.3),
+                SKAction.fadeOut(withDuration: 0.3),
+                SKAction.scale(to: 0.1, duration: 0.3)
+            ])
+            spark.run(SKAction.sequence([drift, SKAction.removeFromParent()]))
+        }
 
         // Score popup
         let popup = SKLabelNode(fontNamed: "AvenirNext-Bold")
@@ -247,15 +298,15 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         } else {
             popup.text = "+1"
         }
-        popup.fontSize = 20
+        popup.fontSize = 22
         popup.fontColor = .yellow
         popup.position = node.position
         popup.zPosition = 80
         addChild(popup)
         popup.run(SKAction.sequence([
             SKAction.group([
-                SKAction.moveBy(x: 0, y: 50, duration: 0.5),
-                SKAction.fadeOut(withDuration: 0.5)
+                SKAction.moveBy(x: 0, y: 55, duration: 0.45),
+                SKAction.fadeOut(withDuration: 0.45)
             ]),
             SKAction.removeFromParent()
         ]))
