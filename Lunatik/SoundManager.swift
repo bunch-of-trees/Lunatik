@@ -3,156 +3,129 @@ import AVFoundation
 class SoundManager {
     static let shared = SoundManager()
 
-    private let engine = AVAudioEngine()
-    private let playerNode = AVAudioPlayerNode()
-    private let sampleRate: Double = 44100
-
-    // Pre-generated buffers
-    private var jumpBuffer: AVAudioPCMBuffer?
-    private var collectBuffer: AVAudioPCMBuffer?
-    private var hitBuffer: AVAudioPCMBuffer?
-    private var swooshBuffer: AVAudioPCMBuffer?
-    private var slideBuffer: AVAudioPCMBuffer?
-    private var gameOverBuffer: AVAudioPCMBuffer?
+    private var soundData: [String: Data] = [:]
+    private var activePlayers: [AVAudioPlayer] = []
+    private var isReady = false
 
     private init() {
-        engine.attach(playerNode)
-        engine.connect(playerNode, to: engine.mainMixerNode, format: nil)
-        try? engine.start()
-        generateAllSounds()
+        // Generate sounds off main thread so we don't freeze the game
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let sounds = [
+                "jump": generateWAV(generator: jumpWave, duration: 0.15, volume: 0.3),
+                "collect": generateWAV(generator: collectWave, duration: 0.18, volume: 0.25),
+                "hit": generateWAV(generator: hitWave, duration: 0.2, volume: 0.35),
+                "swoosh": generateWAV(generator: swooshWave, duration: 0.08, volume: 0.12),
+                "slide": generateWAV(generator: slideWave, duration: 0.25, volume: 0.1),
+                "gameOver": generateWAV(generator: gameOverWave, duration: 0.5, volume: 0.25),
+            ]
+            DispatchQueue.main.async {
+                self.soundData = sounds
+                self.isReady = true
+            }
+        }
     }
+
+    /// Call early (e.g. from ContentView) so sounds are ready before gameplay
+    func warmUp() {}
 
     // MARK: - Play
 
-    func playJump() { play(jumpBuffer) }
-    func playCollect() { play(collectBuffer) }
-    func playHit() { play(hitBuffer) }
-    func playSwoosh() { play(swooshBuffer) }
-    func playSlide() { play(slideBuffer) }
-    func playGameOver() { play(gameOverBuffer) }
+    func playJump() { play("jump") }
+    func playCollect() { play("collect") }
+    func playHit() { play("hit") }
+    func playSwoosh() { play("swoosh") }
+    func playSlide() { play("slide") }
+    func playGameOver() { play("gameOver") }
 
-    private func play(_ buffer: AVAudioPCMBuffer?) {
-        guard let buffer = buffer else { return }
-        playerNode.scheduleBuffer(buffer, completionHandler: nil)
-        if !playerNode.isPlaying { playerNode.play() }
+    private func play(_ name: String) {
+        guard isReady, let data = soundData[name] else { return }
+        guard let player = try? AVAudioPlayer(data: data) else { return }
+        player.volume = 0.5
+        // Clean up finished players
+        activePlayers.removeAll { !$0.isPlaying }
+        activePlayers.append(player)
+        player.play()
     }
 
-    // MARK: - Sound Generation
+    // MARK: - WAV Generation
 
-    private func generateAllSounds() {
-        jumpBuffer = generateJumpSound()
-        collectBuffer = generateCollectSound()
-        hitBuffer = generateHitSound()
-        swooshBuffer = generateSwooshSound()
-        slideBuffer = generateSlideSound()
-        gameOverBuffer = generateGameOverSound()
-    }
+    private typealias WaveGenerator = (_ t: Float, _ progress: Float) -> Float
 
-    private func makeBuffer(duration: Double) -> (AVAudioPCMBuffer, UnsafeMutablePointer<Float>)? {
-        let length = Int(sampleRate * duration)
-        guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1),
-              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(length))
-        else { return nil }
-        buffer.frameLength = AVAudioFrameCount(length)
-        return (buffer, buffer.floatChannelData![0])
-    }
+    private func generateWAV(generator: WaveGenerator, duration: Double, volume: Float) -> Data {
+        let sampleRate: Int = 44100
+        let numSamples = Int(Double(sampleRate) * duration)
+        var data = Data()
 
-    // Bouncy ascending chirp
-    private func generateJumpSound() -> AVAudioPCMBuffer? {
-        let dur = 0.18
-        guard let (buffer, data) = makeBuffer(duration: dur) else { return nil }
-        let length = Int(sampleRate * dur)
-        for i in 0..<length {
+        // WAV header (44 bytes)
+        let dataSize = numSamples * 2 // 16-bit samples
+        let fileSize = 36 + dataSize
+        data.append(contentsOf: [0x52, 0x49, 0x46, 0x46]) // "RIFF"
+        data.append(contentsOf: withUnsafeBytes(of: UInt32(fileSize).littleEndian) { Array($0) })
+        data.append(contentsOf: [0x57, 0x41, 0x56, 0x45]) // "WAVE"
+        data.append(contentsOf: [0x66, 0x6D, 0x74, 0x20]) // "fmt "
+        data.append(contentsOf: withUnsafeBytes(of: UInt32(16).littleEndian) { Array($0) }) // chunk size
+        data.append(contentsOf: withUnsafeBytes(of: UInt16(1).littleEndian) { Array($0) }) // PCM
+        data.append(contentsOf: withUnsafeBytes(of: UInt16(1).littleEndian) { Array($0) }) // mono
+        data.append(contentsOf: withUnsafeBytes(of: UInt32(sampleRate).littleEndian) { Array($0) })
+        data.append(contentsOf: withUnsafeBytes(of: UInt32(sampleRate * 2).littleEndian) { Array($0) }) // byte rate
+        data.append(contentsOf: withUnsafeBytes(of: UInt16(2).littleEndian) { Array($0) }) // block align
+        data.append(contentsOf: withUnsafeBytes(of: UInt16(16).littleEndian) { Array($0) }) // bits per sample
+        data.append(contentsOf: [0x64, 0x61, 0x74, 0x61]) // "data"
+        data.append(contentsOf: withUnsafeBytes(of: UInt32(dataSize).littleEndian) { Array($0) })
+
+        // Generate samples
+        for i in 0..<numSamples {
             let t = Float(i) / Float(sampleRate)
-            let progress = Float(i) / Float(length)
-            let freq: Float = 350 + 500 * progress * progress
-            let envelope = (1.0 - progress) * (1.0 - progress)
-            data[i] = sinf(2 * .pi * freq * t) * 0.3 * envelope
+            let progress = Float(i) / Float(numSamples)
+            let sample = generator(t, progress) * volume
+            let clamped = max(-1.0, min(1.0, sample))
+            let int16 = Int16(clamped * 32000)
+            data.append(contentsOf: withUnsafeBytes(of: int16.littleEndian) { Array($0) })
         }
-        return buffer
+
+        return data
     }
 
-    // Bright double chime
-    private func generateCollectSound() -> AVAudioPCMBuffer? {
-        let dur = 0.2
-        guard let (buffer, data) = makeBuffer(duration: dur) else { return nil }
-        let length = Int(sampleRate * dur)
-        for i in 0..<length {
-            let t = Float(i) / Float(sampleRate)
-            let progress = Float(i) / Float(length)
-            let envelope = max(0, 1.0 - progress * 2.5)
-            // Two harmonics for a chime
-            let s1 = sinf(2 * .pi * 1200 * t) * 0.15
-            let s2 = sinf(2 * .pi * 1600 * t) * 0.1
-            // Second chime delayed
-            let env2: Float = progress > 0.3 ? max(0, 1.0 - (progress - 0.3) * 3.0) : 0
-            let s3 = sinf(2 * .pi * 1500 * t) * 0.15 * env2
-            data[i] = (s1 + s2) * envelope + s3
-        }
-        return buffer
+    // MARK: - Wave Generators
+
+    private func jumpWave(t: Float, progress: Float) -> Float {
+        let freq: Float = 350 + 550 * progress * progress
+        let envelope = (1.0 - progress) * (1.0 - progress)
+        return sinf(2 * .pi * freq * t) * envelope
     }
 
-    // Low impact thud
-    private func generateHitSound() -> AVAudioPCMBuffer? {
-        let dur = 0.25
-        guard let (buffer, data) = makeBuffer(duration: dur) else { return nil }
-        let length = Int(sampleRate * dur)
-        for i in 0..<length {
-            let t = Float(i) / Float(sampleRate)
-            let progress = Float(i) / Float(length)
-            let freq: Float = 120 * (1.0 - progress * 0.5)
-            let envelope = (1.0 - progress) * (1.0 - progress)
-            let tone = sinf(2 * .pi * freq * t) * 0.4
-            let noise = Float.random(in: -0.15...0.15) * (1.0 - progress)
-            data[i] = (tone + noise) * envelope
-        }
-        return buffer
+    private func collectWave(t: Float, progress: Float) -> Float {
+        let env1 = max(0, 1.0 - progress * 3.0)
+        let s1 = sinf(2 * .pi * 1200 * t) * 0.6 * env1
+        let env2: Float = progress > 0.25 ? max(0, 1.0 - (progress - 0.25) * 3.5) : 0
+        let s2 = sinf(2 * .pi * 1500 * t) * 0.6 * env2
+        return s1 + s2
     }
 
-    // Quick swoosh for lane switch
-    private func generateSwooshSound() -> AVAudioPCMBuffer? {
-        let dur = 0.1
-        guard let (buffer, data) = makeBuffer(duration: dur) else { return nil }
-        let length = Int(sampleRate * dur)
-        for i in 0..<length {
-            let progress = Float(i) / Float(length)
-            let envelope = sinf(.pi * progress) // smooth bell curve
-            let noise = Float.random(in: -1...1)
-            data[i] = noise * 0.12 * envelope
-        }
-        return buffer
+    private func hitWave(t: Float, progress: Float) -> Float {
+        let freq: Float = 110 * (1.0 - progress * 0.5)
+        let envelope = (1.0 - progress) * (1.0 - progress)
+        let tone = sinf(2 * .pi * freq * t) * envelope
+        return tone
     }
 
-    // Sliding scrape
-    private func generateSlideSound() -> AVAudioPCMBuffer? {
-        let dur = 0.3
-        guard let (buffer, data) = makeBuffer(duration: dur) else { return nil }
-        let length = Int(sampleRate * dur)
-        for i in 0..<length {
-            let t = Float(i) / Float(sampleRate)
-            let progress = Float(i) / Float(length)
-            let envelope = 1.0 - progress
-            let noise = Float.random(in: -1...1) * 0.08
-            let tone = sinf(2 * .pi * 200 * t) * 0.06
-            data[i] = (noise + tone) * envelope
-        }
-        return buffer
+    private func swooshWave(t: Float, progress: Float) -> Float {
+        let envelope = sinf(.pi * progress)
+        return Float.random(in: -1...1) * envelope
     }
 
-    // Sad descending tone
-    private func generateGameOverSound() -> AVAudioPCMBuffer? {
-        let dur = 0.6
-        guard let (buffer, data) = makeBuffer(duration: dur) else { return nil }
-        let length = Int(sampleRate * dur)
-        for i in 0..<length {
-            let t = Float(i) / Float(sampleRate)
-            let progress = Float(i) / Float(length)
-            let freq: Float = 440 * (1.0 - progress * 0.6)
-            let envelope = max(0, 1.0 - progress * 1.2)
-            let s1 = sinf(2 * .pi * freq * t) * 0.2
-            let s2 = sinf(2 * .pi * freq * 0.5 * t) * 0.15
-            data[i] = (s1 + s2) * envelope
-        }
-        return buffer
+    private func slideWave(t: Float, progress: Float) -> Float {
+        let envelope = 1.0 - progress
+        let noise = Float.random(in: -1...1) * 0.4
+        let tone = sinf(2 * .pi * 180 * t) * 0.3
+        return (noise + tone) * envelope
+    }
+
+    private func gameOverWave(t: Float, progress: Float) -> Float {
+        let freq: Float = 400 * (1.0 - progress * 0.55)
+        let envelope = max(0, 1.0 - progress * 1.3)
+        let s1 = sinf(2 * .pi * freq * t) * 0.5
+        let s2 = sinf(2 * .pi * freq * 0.5 * t) * 0.4
+        return (s1 + s2) * envelope
     }
 }

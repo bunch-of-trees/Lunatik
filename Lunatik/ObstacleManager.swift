@@ -9,11 +9,29 @@ class ObstacleManager {
     private var sceneHeight: CGFloat = 844
     private var lunaY: CGFloat = 0
 
+    // Cached textures for performance (avoid creating SKShapeNodes every spawn)
+    private var obstacleTextures: [ObstacleType: SKTexture] = [:]
+    private var collectibleTextures: [CollectibleType: SKTexture] = [:]
+
     init(scene: SKScene) {
         self.scene = scene
         self.sceneWidth = scene.size.width
         self.sceneHeight = scene.size.height
         self.lunaY = scene.size.height * GameConstants.lunaYPosition
+        cacheTextures(in: scene)
+    }
+
+    /// Pre-render shape nodes to textures once for fast spawning
+    private func cacheTextures(in scene: SKScene) {
+        guard let view = scene.view else { return }
+        for type in ObstacleType.allCases {
+            let node = buildObstacleShape(type: type)
+            obstacleTextures[type] = view.texture(from: node)
+        }
+        for type in CollectibleType.allCases {
+            let node = buildCollectibleShape(type: type)
+            collectibleTextures[type] = view.texture(from: node)
+        }
     }
 
     // MARK: - Update
@@ -163,11 +181,59 @@ class ObstacleManager {
         }
     }
 
-    // MARK: - Create Visuals
+    // MARK: - Create Game Objects (texture-cached for performance)
 
     private func createObstacle(type: ObstacleType) -> SKNode {
         let node = SKNode()
 
+        if let texture = obstacleTextures[type] {
+            let sprite = SKSpriteNode(texture: texture)
+            node.addChild(sprite)
+        }
+
+        // Shadow (simple sprite, not shape)
+        let shadow = SKSpriteNode(color: SKColor(white: 0.0, alpha: 0.18), size: CGSize(width: 40, height: 10))
+        shadow.position.y = -25
+        shadow.zPosition = -1
+        node.addChild(shadow)
+
+        let physics = SKPhysicsBody(rectangleOf: CGSize(width: 32, height: 38))
+        physics.isDynamic = false
+        physics.categoryBitMask = PhysicsCategory.obstacle
+        physics.contactTestBitMask = PhysicsCategory.luna
+        node.physicsBody = physics
+
+        return node
+    }
+
+    private func createCollectible(type: CollectibleType) -> SKNode {
+        let node = SKNode()
+
+        if let texture = collectibleTextures[type] {
+            let sprite = SKSpriteNode(texture: texture)
+            node.addChild(sprite)
+        }
+
+        // Float animation
+        let float = SKAction.sequence([
+            SKAction.moveBy(x: 0, y: 5, duration: 0.35),
+            SKAction.moveBy(x: 0, y: -5, duration: 0.35)
+        ])
+        node.run(SKAction.repeatForever(float))
+
+        let physics = SKPhysicsBody(circleOfRadius: 12)
+        physics.isDynamic = false
+        physics.categoryBitMask = PhysicsCategory.collectible
+        physics.contactTestBitMask = PhysicsCategory.luna
+        node.physicsBody = physics
+
+        return node
+    }
+
+    // MARK: - Shape Builders (used once at init to create cached textures)
+
+    private func buildObstacleShape(type: ObstacleType) -> SKNode {
+        let node = SKNode()
         switch type {
         case .fireHydrant:
             let body = SKShapeNode(rectOf: CGSize(width: 30, height: 44), cornerRadius: 4)
@@ -184,7 +250,6 @@ class ObstacleManager {
                 nub.position = CGPoint(x: xOff, y: 3)
                 node.addChild(nub)
             }
-
         case .trashCan:
             let body = SKShapeNode(rectOf: CGSize(width: 42, height: 52), cornerRadius: 3)
             body.fillColor = SKColor(white: 0.35, alpha: 1.0)
@@ -200,7 +265,6 @@ class ObstacleManager {
             handle.strokeColor = .clear
             handle.position.y = 31
             node.addChild(handle)
-
         case .cone:
             let conePath = CGMutablePath()
             conePath.move(to: CGPoint(x: -16, y: -16))
@@ -219,28 +283,11 @@ class ObstacleManager {
             stripe2.position.y = 15
             node.addChild(stripe2)
         }
-
-        // Shadow under obstacle
-        let shadow = SKShapeNode(ellipseOf: CGSize(width: 40, height: 12))
-        shadow.fillColor = SKColor(white: 0.0, alpha: 0.2)
-        shadow.strokeColor = .clear
-        shadow.position.y = -25
-        shadow.zPosition = -1
-        node.addChild(shadow)
-
-        // Physics
-        let physics = SKPhysicsBody(rectangleOf: CGSize(width: 32, height: 38))
-        physics.isDynamic = false
-        physics.categoryBitMask = PhysicsCategory.obstacle
-        physics.contactTestBitMask = PhysicsCategory.luna
-        node.physicsBody = physics
-
         return node
     }
 
-    private func createCollectible(type: CollectibleType) -> SKNode {
+    private func buildCollectibleShape(type: CollectibleType) -> SKNode {
         let node = SKNode()
-
         switch type {
         case .bone:
             let shaft = SKSpriteNode(color: .white, size: CGSize(width: 22, height: 7))
@@ -253,7 +300,6 @@ class ObstacleManager {
                 knob.position.x = xOff
                 node.addChild(knob)
             }
-
         case .pizza:
             let path = CGMutablePath()
             path.move(to: CGPoint(x: 0, y: 13))
@@ -272,7 +318,6 @@ class ObstacleManager {
                 pep.position = pos
                 node.addChild(pep)
             }
-
         case .tennisBall:
             let ball = SKShapeNode(circleOfRadius: 10)
             ball.fillColor = SKColor(red: 0.8, green: 1.0, blue: 0.0, alpha: 1.0)
@@ -280,28 +325,6 @@ class ObstacleManager {
             ball.lineWidth = 1.5
             node.addChild(ball)
         }
-
-        // Float animation
-        let float = SKAction.sequence([
-            SKAction.moveBy(x: 0, y: 5, duration: 0.35),
-            SKAction.moveBy(x: 0, y: -5, duration: 0.35)
-        ])
-        node.run(SKAction.repeatForever(float))
-
-        // Gentle spin
-        let spin = SKAction.sequence([
-            SKAction.rotate(byAngle: 0.15, duration: 0.4),
-            SKAction.rotate(byAngle: -0.15, duration: 0.4)
-        ])
-        node.run(SKAction.repeatForever(spin))
-
-        // Physics
-        let physics = SKPhysicsBody(circleOfRadius: 12)
-        physics.isDynamic = false
-        physics.categoryBitMask = PhysicsCategory.collectible
-        physics.contactTestBitMask = PhysicsCategory.luna
-        node.physicsBody = physics
-
         return node
     }
 

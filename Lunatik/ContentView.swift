@@ -2,6 +2,11 @@ import SwiftUI
 import SpriteKit
 
 struct ContentView: View {
+    init() {
+        // Pre-warm sound generation on a background thread
+        SoundManager.shared.warmUp()
+    }
+
     var body: some View {
         GeometryReader { geometry in
             SpriteView(scene: makeMenuScene(size: geometry.size))

@@ -13,6 +13,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private var currentSpeed: CGFloat = GameConstants.initialSpeed
     private var lastUpdateTime: TimeInterval = 0
     private var isGameOver = false
+    private var hasTransitioned = false
 
     // Swipe tracking
     private var touchStart: CGPoint?
@@ -28,9 +29,6 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
         physicsWorld.gravity = .zero
         physicsWorld.contactDelegate = self
-
-        // Initialize sound engine
-        _ = SoundManager.shared
 
         setupBackground()
         setupLuna()
@@ -91,7 +89,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         touchStart = nil
 
         if isGameOver {
-            transitionToGameOver()
+            if !hasTransitioned { transitionToGameOver() }
             return
         }
 
@@ -160,9 +158,9 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private func spawnDust() {
         guard !luna.isJumping else { return }
 
-        let dust = SKShapeNode(circleOfRadius: CGFloat.random(in: 2...4))
-        dust.fillColor = SKColor(white: 0.7, alpha: CGFloat.random(in: 0.15...0.3))
-        dust.strokeColor = .clear
+        let size = CGFloat.random(in: 4...8)
+        let dust = SKSpriteNode(color: SKColor(white: 0.7, alpha: CGFloat.random(in: 0.15...0.3)),
+                                size: CGSize(width: size, height: size))
         dust.position = CGPoint(
             x: luna.position.x + CGFloat.random(in: -15...15),
             y: luna.position.y - GameConstants.lunaSpriteHeight * 0.4 + CGFloat.random(in: -5...5)
@@ -273,10 +271,11 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         luna.collectAnimation()
 
         // Sparkle burst
-        for _ in 0..<6 {
-            let spark = SKShapeNode(circleOfRadius: CGFloat.random(in: 2...4))
-            spark.fillColor = SKColor(red: 1, green: 1, blue: CGFloat.random(in: 0.3...0.8), alpha: 1)
-            spark.strokeColor = .clear
+        for _ in 0..<5 {
+            let sz = CGFloat.random(in: 4...7)
+            let spark = SKSpriteNode(
+                color: SKColor(red: 1, green: 1, blue: CGFloat.random(in: 0.3...0.8), alpha: 1),
+                size: CGSize(width: sz, height: sz))
             spark.position = node.position
             spark.zPosition = 80
             addChild(spark)
@@ -318,6 +317,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     // MARK: - Transition
 
     private func transitionToGameOver() {
+        guard !hasTransitioned else { return }
+        hasTransitioned = true
         let finalScore = score + Int(distanceScore)
         let highScore = UserDefaults.standard.integer(forKey: "LunatikHighScore")
         if finalScore > highScore {
