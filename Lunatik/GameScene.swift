@@ -15,9 +15,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private var isGameOver = false
     private var hasTransitioned = false
 
-    // Swipe tracking
-    private var touchStart: CGPoint?
-    private var touchStartTime: TimeInterval = 0
+    // Gesture recognizers (cleaned up on scene exit)
+    private var gestureRecognizers: [UIGestureRecognizer] = []
 
     // Dust particles
     private var dustTimer: TimeInterval = 0
@@ -34,6 +33,14 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         setupLuna()
         setupHUD()
         obstacleManager = ObstacleManager(scene: self)
+        setupGestures(in: view)
+    }
+
+    override func willMove(from view: SKView) {
+        for gr in gestureRecognizers {
+            view.removeGestureRecognizer(gr)
+        }
+        gestureRecognizers.removeAll()
     }
 
     // MARK: - Setup
@@ -54,7 +61,6 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func setupHUD() {
-        // Semi-transparent bar at top
         let hudBar = SKSpriteNode(
             color: SKColor(white: 0.0, alpha: 0.25),
             size: CGSize(width: size.width, height: 55)
@@ -74,58 +80,35 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         addChild(scoreLabel)
     }
 
-    // MARK: - Touch / Swipe Handling
+    // MARK: - Gesture Recognizers
 
-    private let swipeThreshold: CGFloat = 18
-    private var swipeHandled = false
+    private func setupGestures(in view: SKView) {
+        for direction: UISwipeGestureRecognizer.Direction in [.left, .right, .up, .down] {
+            let swipe = UISwipeGestureRecognizer(target: self, action: #selector(handleSwipe(_:)))
+            swipe.direction = direction
+            view.addGestureRecognizer(swipe)
+            gestureRecognizers.append(swipe)
+        }
 
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first else { return }
-        touchStart = touch.location(in: self)
-        touchStartTime = touch.timestamp
-        swipeHandled = false
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        view.addGestureRecognizer(tap)
+        gestureRecognizers.append(tap)
     }
 
-    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard !swipeHandled, !isGameOver,
-              let touch = touches.first, let start = touchStart else { return }
-        let current = touch.location(in: self)
-        let dx = current.x - start.x
-        let dy = current.y - start.y
-
-        // Fire immediately once the swipe clears the threshold
-        if abs(dx) > swipeThreshold || abs(dy) > swipeThreshold {
-            swipeHandled = true
-            if abs(dx) > abs(dy) {
-                if dx > 0 { luna.moveRight() }
-                else { luna.moveLeft() }
-            } else {
-                if dy > 0 { luna.jump() }
-                else { luna.slide() }
-            }
+    @objc private func handleSwipe(_ gesture: UISwipeGestureRecognizer) {
+        guard !isGameOver else { return }
+        switch gesture.direction {
+        case .left:  luna.moveLeft()
+        case .right: luna.moveRight()
+        case .up:    luna.jump()
+        case .down:  luna.slide()
+        default: break
         }
     }
 
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first, let start = touchStart else { return }
-        touchStart = nil
-
-        if isGameOver {
-            if !hasTransitioned { transitionToGameOver() }
-            return
-        }
-
-        // If swipe already handled during move, skip
-        if swipeHandled { return }
-
-        // Short tap = jump
-        let end = touch.location(in: self)
-        let dx = end.x - start.x
-        let dy = end.y - start.y
-        let elapsed = touch.timestamp - touchStartTime
-        if (dx * dx + dy * dy) < 400 && elapsed < 0.25 {
-            luna.jump()
-        }
+    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+        guard !isGameOver else { return }
+        luna.jump()
     }
 
     // MARK: - Game Loop
@@ -139,23 +122,19 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
         guard !isGameOver else { return }
 
-        // Increase speed
         currentSpeed = min(
             currentSpeed + GameConstants.speedIncrement * CGFloat(deltaTime) * 60,
             GameConstants.maxSpeed
         )
 
-        // Update systems
         background.update(speed: currentSpeed, deltaTime: deltaTime)
         obstacleManager.update(speed: currentSpeed, deltaTime: deltaTime)
 
-        // Distance score
         distanceScore += currentSpeed * CGFloat(deltaTime) * 0.01
         updateScore()
 
-        // Dust particles
         dustTimer += deltaTime
-        if dustTimer > 0.08 {
+        if dustTimer > 0.1 {
             dustTimer = 0
             spawnDust()
         }
@@ -170,23 +149,22 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
     private func spawnDust() {
         guard !luna.isJumping else { return }
-
-        let size = CGFloat.random(in: 4...8)
-        let dust = SKSpriteNode(color: SKColor(white: 0.7, alpha: CGFloat.random(in: 0.15...0.3)),
-                                size: CGSize(width: size, height: size))
+        let sz = CGFloat.random(in: 4...7)
+        let dust = SKSpriteNode(color: SKColor(white: 0.7, alpha: CGFloat.random(in: 0.12...0.25)),
+                                size: CGSize(width: sz, height: sz))
         dust.position = CGPoint(
-            x: luna.position.x + CGFloat.random(in: -15...15),
-            y: luna.position.y - GameConstants.lunaSpriteHeight * 0.4 + CGFloat.random(in: -5...5)
+            x: luna.position.x + CGFloat.random(in: -12...12),
+            y: luna.position.y - GameConstants.lunaSpriteHeight * 0.4
         )
         dust.zPosition = 45
         addChild(dust)
-
-        let drift = SKAction.group([
-            SKAction.moveBy(x: CGFloat.random(in: -10...10), y: CGFloat.random(in: 10...25), duration: 0.4),
-            SKAction.fadeOut(withDuration: 0.4),
-            SKAction.scale(to: 0.3, duration: 0.4)
-        ])
-        dust.run(SKAction.sequence([drift, SKAction.removeFromParent()]))
+        dust.run(SKAction.sequence([
+            SKAction.group([
+                SKAction.moveBy(x: CGFloat.random(in: -8...8), y: CGFloat.random(in: 8...20), duration: 0.35),
+                SKAction.fadeOut(withDuration: 0.35)
+            ]),
+            SKAction.removeFromParent()
+        ]))
     }
 
     // MARK: - Physics Contact
@@ -198,14 +176,12 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             let obstacleNode = contact.bodyA.categoryBitMask == PhysicsCategory.obstacle
                 ? contact.bodyA.node : contact.bodyB.node
 
-            // Jumping over jumpable obstacles
             if luna.isJumping,
                let jumpable = obstacleNode?.userData?["jumpable"] as? Bool,
                jumpable {
                 return
             }
 
-            // Sliding dodges everything
             if luna.isSliding { return }
 
             handleObstacleHit()
@@ -224,51 +200,31 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         SoundManager.shared.playHit()
 
         // Red flash
-        let flash = SKSpriteNode(color: SKColor(red: 1.0, green: 0.15, blue: 0.1, alpha: 0.35), size: size)
+        let flash = SKSpriteNode(color: SKColor(red: 1.0, green: 0.15, blue: 0.1, alpha: 0.4), size: size)
         flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
         flash.zPosition = 200
         addChild(flash)
-        flash.run(SKAction.fadeOut(withDuration: 0.3)) { flash.removeFromParent() }
+        flash.run(SKAction.fadeOut(withDuration: 0.4)) { flash.removeFromParent() }
 
         // Camera shake
-        let shakeAmount: CGFloat = 10
-        let shakeDur: TimeInterval = 0.025
         var shakeActions: [SKAction] = []
-        for _ in 0..<6 {
-            let dx = CGFloat.random(in: -shakeAmount...shakeAmount)
-            let dy = CGFloat.random(in: -shakeAmount...shakeAmount)
-            shakeActions.append(SKAction.moveBy(x: dx, y: dy, duration: shakeDur))
-            shakeActions.append(SKAction.moveBy(x: -dx, y: -dy, duration: shakeDur))
+        for _ in 0..<5 {
+            let dx = CGFloat.random(in: -10...10)
+            let dy = CGFloat.random(in: -10...10)
+            shakeActions.append(SKAction.moveBy(x: dx, y: dy, duration: 0.025))
+            shakeActions.append(SKAction.moveBy(x: -dx, y: -dy, duration: 0.025))
         }
         scene?.run(SKAction.sequence(shakeActions))
 
         luna.hitAnimation()
 
-        // Delayed game over sound
+        // Game over sound then auto-transition
         run(SKAction.sequence([
-            SKAction.wait(forDuration: 0.3),
-            SKAction.run { SoundManager.shared.playGameOver() }
+            SKAction.wait(forDuration: 0.35),
+            SKAction.run { SoundManager.shared.playGameOver() },
+            SKAction.wait(forDuration: 1.0),
+            SKAction.run { [weak self] in self?.transitionToGameOver() }
         ]))
-
-        run(SKAction.wait(forDuration: 1.0)) { [weak self] in
-            self?.showGameOverPrompt()
-        }
-    }
-
-    private func showGameOverPrompt() {
-        let label = SKLabelNode(fontNamed: "AvenirNext-Bold")
-        label.text = "Tap to continue"
-        label.fontSize = 24
-        label.fontColor = .white
-        label.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        label.zPosition = 200
-        addChild(label)
-
-        let pulse = SKAction.sequence([
-            SKAction.fadeAlpha(to: 0.25, duration: 0.5),
-            SKAction.fadeAlpha(to: 1.0, duration: 0.5)
-        ])
-        label.run(SKAction.repeatForever(pulse))
     }
 
     private func handleCollectiblePickup(node: SKNode?) {
@@ -295,12 +251,14 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
             let angle = CGFloat.random(in: 0...(.pi * 2))
             let dist = CGFloat.random(in: 20...50)
-            let drift = SKAction.group([
-                SKAction.moveBy(x: cos(angle) * dist, y: sin(angle) * dist, duration: 0.3),
-                SKAction.fadeOut(withDuration: 0.3),
-                SKAction.scale(to: 0.1, duration: 0.3)
-            ])
-            spark.run(SKAction.sequence([drift, SKAction.removeFromParent()]))
+            spark.run(SKAction.sequence([
+                SKAction.group([
+                    SKAction.moveBy(x: cos(angle) * dist, y: sin(angle) * dist, duration: 0.3),
+                    SKAction.fadeOut(withDuration: 0.3),
+                    SKAction.scale(to: 0.1, duration: 0.3)
+                ]),
+                SKAction.removeFromParent()
+            ]))
         }
 
         // Score popup
