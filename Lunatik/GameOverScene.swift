@@ -5,88 +5,58 @@ class GameOverScene: SKScene {
     var finalScore: Int = 0
     var highScore: Int = 0
 
-    private var luna: LunaCharacter!
-
     override func didMove(to view: SKView) {
-        backgroundColor = SKColor(red: 0.15, green: 0.12, blue: 0.22, alpha: 1.0)
+        backgroundColor = SKColor(red: 0.12, green: 0.1, blue: 0.2, alpha: 1.0)
 
-        setupBackground()
         setupGameOverText()
         setupScores()
-        setupLuna()
+        setupLunaSprite()
         setupRestart()
     }
 
-    private func setupBackground() {
-        // Darker moody background
-        let overlay = SKSpriteNode(
-            color: SKColor(red: 0.1, green: 0.08, blue: 0.18, alpha: 0.5),
-            size: size
-        )
-        overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        overlay.zPosition = -10
-        addChild(overlay)
-
-        // Sad clouds
-        for i in 0..<3 {
-            let cloud = SKShapeNode(ellipseOf: CGSize(width: 60, height: 25))
-            cloud.fillColor = SKColor(white: 0.3, alpha: 0.4)
-            cloud.strokeColor = .clear
-            cloud.position = CGPoint(
-                x: CGFloat(i + 1) * size.width / 4,
-                y: size.height * CGFloat.random(in: 0.75...0.9)
-            )
-            cloud.zPosition = -5
-            addChild(cloud)
-        }
-    }
-
     private func setupGameOverText() {
-        let gameOver = SKLabelNode(fontNamed: "AvenirNext-Heavy")
-        gameOver.text = "GAME OVER"
-        gameOver.fontSize = 42
-        gameOver.fontColor = SKColor(red: 1.0, green: 0.4, blue: 0.3, alpha: 1.0)
-        gameOver.position = CGPoint(x: size.width / 2, y: size.height * 0.78)
-        gameOver.zPosition = 50
-        addChild(gameOver)
+        let label = SKLabelNode(fontNamed: "AvenirNext-Heavy")
+        label.text = "GAME OVER"
+        label.fontSize = 44
+        label.fontColor = SKColor(red: 1.0, green: 0.4, blue: 0.3, alpha: 1.0)
+        label.position = CGPoint(x: size.width / 2, y: size.height * 0.82)
+        label.zPosition = 50
+        addChild(label)
 
-        // Drop in animation
-        gameOver.setScale(0.1)
-        gameOver.run(SKAction.scale(to: 1.0, duration: 0.4))
+        label.setScale(0.1)
+        label.run(SKAction.scale(to: 1.0, duration: 0.4))
     }
 
     private func setupScores() {
-        // Final score
         let scoreTitle = SKLabelNode(fontNamed: "AvenirNext-Medium")
         scoreTitle.text = "Score"
         scoreTitle.fontSize = 18
         scoreTitle.fontColor = SKColor(white: 0.7, alpha: 1.0)
-        scoreTitle.position = CGPoint(x: size.width / 2, y: size.height * 0.62)
+        scoreTitle.position = CGPoint(x: size.width / 2, y: size.height * 0.68)
         scoreTitle.zPosition = 50
         addChild(scoreTitle)
 
         let scoreValue = SKLabelNode(fontNamed: "AvenirNext-Bold")
         scoreValue.text = "\(finalScore)"
-        scoreValue.fontSize = 48
+        scoreValue.fontSize = 52
         scoreValue.fontColor = .white
-        scoreValue.position = CGPoint(x: size.width / 2, y: size.height * 0.52)
+        scoreValue.position = CGPoint(x: size.width / 2, y: size.height * 0.59)
         scoreValue.zPosition = 50
         addChild(scoreValue)
 
-        // Animate score counting up
-        let countDuration = min(Double(finalScore) * 0.01, 1.5)
+        // Count up animation
         if finalScore > 0 {
-            var displayScore = 0
-            let increment = max(1, finalScore / 30)
+            var display = 0
+            let inc = max(1, finalScore / 25)
             let countAction = SKAction.repeat(
                 SKAction.sequence([
                     SKAction.run {
-                        displayScore = min(displayScore + increment, self.finalScore)
-                        scoreValue.text = "\(displayScore)"
+                        display = min(display + inc, self.finalScore)
+                        scoreValue.text = "\(display)"
                     },
-                    SKAction.wait(forDuration: countDuration / 30)
+                    SKAction.wait(forDuration: 0.04)
                 ]),
-                count: 30
+                count: 25
             )
             scoreValue.run(SKAction.sequence([
                 SKAction.wait(forDuration: 0.3),
@@ -95,15 +65,14 @@ class GameOverScene: SKScene {
             ]))
         }
 
-        // High score
-        let hsLabel = SKLabelNode(fontNamed: "AvenirNext-Medium")
         let isNewRecord = finalScore >= highScore && finalScore > 0
+        let hsLabel = SKLabelNode(fontNamed: "AvenirNext-Medium")
         hsLabel.text = isNewRecord ? "NEW BEST!" : "Best: \(highScore)"
-        hsLabel.fontSize = 20
+        hsLabel.fontSize = 22
         hsLabel.fontColor = isNewRecord
             ? SKColor(red: 1.0, green: 0.85, blue: 0.2, alpha: 1.0)
-            : SKColor(white: 0.6, alpha: 1.0)
-        hsLabel.position = CGPoint(x: size.width / 2, y: size.height * 0.45)
+            : SKColor(white: 0.55, alpha: 1.0)
+        hsLabel.position = CGPoint(x: size.width / 2, y: size.height * 0.52)
         hsLabel.zPosition = 50
         addChild(hsLabel)
 
@@ -116,39 +85,39 @@ class GameOverScene: SKScene {
         }
     }
 
-    private func setupLuna() {
-        luna = LunaCharacter()
-        luna.position = CGPoint(x: size.width / 2, y: size.height * 0.25)
-        luna.zPosition = 20
-        luna.setScale(1.5)
-        addChild(luna)
+    private func setupLunaSprite() {
+        let texture = SKTexture(imageNamed: "LunaSprite")
+        let aspectRatio = texture.size().width / texture.size().height
+        let spriteHeight: CGFloat = 160
+        let sprite = SKSpriteNode(texture: texture,
+                                  size: CGSize(width: spriteHeight * aspectRatio, height: spriteHeight))
+        sprite.position = CGPoint(x: size.width / 2, y: size.height * 0.3)
+        sprite.zPosition = 20
+        addChild(sprite)
 
-        // Luna lies down (tilt)
-        luna.zRotation = -0.15
+        // Sad tilt
+        sprite.zRotation = -0.1
     }
 
     private func setupRestart() {
-        let restart = SKLabelNode(fontNamed: "AvenirNext-DemiBold")
-        restart.text = "Tap to Play Again"
-        restart.fontSize = 20
-        restart.fontColor = .white
-        restart.position = CGPoint(x: size.width / 2, y: size.height * 0.1)
-        restart.zPosition = 50
-        addChild(restart)
+        let label = SKLabelNode(fontNamed: "AvenirNext-DemiBold")
+        label.text = "Tap to Play Again"
+        label.fontSize = 22
+        label.fontColor = .white
+        label.position = CGPoint(x: size.width / 2, y: size.height * 0.1)
+        label.zPosition = 50
+        addChild(label)
 
-        let fadeInOut = SKAction.sequence([
+        let fade = SKAction.sequence([
             SKAction.fadeAlpha(to: 0.3, duration: 0.8),
             SKAction.fadeAlpha(to: 1.0, duration: 0.8)
         ])
-        restart.run(SKAction.repeatForever(fadeInOut))
+        label.run(SKAction.repeatForever(fade))
     }
-
-    // MARK: - Touch
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         let gameScene = GameScene(size: size)
         gameScene.scaleMode = scaleMode
-        let transition = SKTransition.doorway(withDuration: 0.8)
-        view?.presentScene(gameScene, transition: transition)
+        view?.presentScene(gameScene, transition: SKTransition.doorway(withDuration: 0.8))
     }
 }

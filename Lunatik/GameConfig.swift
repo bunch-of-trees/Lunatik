@@ -4,9 +4,28 @@ import SpriteKit
 struct PhysicsCategory {
     static let none: UInt32       = 0
     static let luna: UInt32       = 0x1 << 0
-    static let ground: UInt32     = 0x1 << 1
-    static let obstacle: UInt32   = 0x1 << 2
-    static let collectible: UInt32 = 0x1 << 3
+    static let obstacle: UInt32   = 0x1 << 1
+    static let collectible: UInt32 = 0x1 << 2
+}
+
+// MARK: - Lanes
+enum Lane: Int, CaseIterable {
+    case left = 0
+    case center = 1
+    case right = 2
+
+    func xPosition(sceneWidth: CGFloat) -> CGFloat {
+        let laneWidth = sceneWidth / 3.0
+        return laneWidth * CGFloat(rawValue) + laneWidth / 2.0
+    }
+
+    func moveLeft() -> Lane? {
+        Lane(rawValue: rawValue - 1)
+    }
+
+    func moveRight() -> Lane? {
+        Lane(rawValue: rawValue + 1)
+    }
 }
 
 // MARK: - Collectible Types
@@ -22,53 +41,48 @@ enum CollectibleType: CaseIterable {
         case .tennisBall: return 2
         }
     }
-
-    var color: SKColor {
-        switch self {
-        case .bone: return .white
-        case .pizza: return SKColor(red: 1.0, green: 0.8, blue: 0.2, alpha: 1.0)
-        case .tennisBall: return SKColor(red: 0.8, green: 1.0, blue: 0.0, alpha: 1.0)
-        }
-    }
 }
 
 // MARK: - Obstacle Types
 enum ObstacleType: CaseIterable {
     case fireHydrant
     case trashCan
-    case fence
+    case cone
 
-    var size: CGSize {
+    /// Height relative to the lane (for jump-over detection)
+    var isJumpable: Bool {
         switch self {
-        case .fireHydrant: return CGSize(width: 25, height: 40)
-        case .trashCan: return CGSize(width: 30, height: 45)
-        case .fence: return CGSize(width: 15, height: 55)
-        }
-    }
-
-    var color: SKColor {
-        switch self {
-        case .fireHydrant: return .red
-        case .trashCan: return .darkGray
-        case .fence: return SKColor(red: 0.6, green: 0.4, blue: 0.2, alpha: 1.0)
+        case .fireHydrant: return true
+        case .trashCan: return false
+        case .cone: return true
         }
     }
 }
 
 // MARK: - Game Constants
 struct GameConstants {
-    static let gravity: CGFloat = -30.0
-    static let jumpImpulse: CGFloat = 520.0
-    static let initialSpeed: CGFloat = 280.0
-    static let maxSpeed: CGFloat = 600.0
-    static let speedIncrement: CGFloat = 0.15 // per second
-    static let groundHeight: CGFloat = 80.0
-    static let lunaStartX: CGFloat = 100.0
+    // Luna
+    static let lunaSpriteHeight: CGFloat = 100.0
+    static let lunaYPosition: CGFloat = 0.15 // fraction of screen height
 
-    static let minObstacleInterval: TimeInterval = 1.2
-    static let maxObstacleInterval: TimeInterval = 2.8
-    static let collectibleChance: Double = 0.4
+    // Speed
+    static let initialSpeed: CGFloat = 320.0
+    static let maxSpeed: CGFloat = 700.0
+    static let speedIncrement: CGFloat = 0.3
 
-    static let lunaBodyWidth: CGFloat = 50.0
-    static let lunaBodyHeight: CGFloat = 35.0
+    // Spawning
+    static let minSpawnInterval: TimeInterval = 0.8
+    static let maxSpawnInterval: TimeInterval = 1.8
+    static let collectibleChance: Double = 0.45
+    static let doubleObstacleChance: Double = 0.25
+
+    // Jumping
+    static let jumpHeight: CGFloat = 130.0
+    static let jumpDuration: TimeInterval = 0.45
+
+    // Sliding
+    static let slideDuration: TimeInterval = 0.6
+
+    // Lane switching
+    static let laneSwitchDuration: TimeInterval = 0.12
 }
