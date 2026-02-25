@@ -16,7 +16,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private var hasTransitioned = false
 
     // Gesture recognizers (cleaned up on scene exit)
-    private var gestureRecognizers: [UIGestureRecognizer] = []
+    private var addedGestureRecognizers: [UIGestureRecognizer] = []
+    private var panHandled = false
 
     // Dust particles
     private var dustTimer: TimeInterval = 0
@@ -29,6 +30,10 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         physicsWorld.gravity = .zero
         physicsWorld.contactDelegate = self
 
+        // Performance: enable GPU optimizations
+        view.ignoresSiblingOrder = true
+        view.preferredFramesPerSecond = 120
+
         setupBackground()
         setupLuna()
         setupHUD()
@@ -37,10 +42,10 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     override func willMove(from view: SKView) {
-        for gr in gestureRecognizers {
+        for gr in addedGestureRecognizers {
             view.removeGestureRecognizer(gr)
         }
-        gestureRecognizers.removeAll()
+        addedGestureRecognizers.removeAll()
     }
 
     // MARK: - Setup
@@ -83,26 +88,42 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     // MARK: - Gesture Recognizers
 
     private func setupGestures(in view: SKView) {
-        for direction: UISwipeGestureRecognizer.Direction in [.left, .right, .up, .down] {
-            let swipe = UISwipeGestureRecognizer(target: self, action: #selector(handleSwipe(_:)))
-            swipe.direction = direction
-            view.addGestureRecognizer(swipe)
-            gestureRecognizers.append(swipe)
-        }
+        // Pan recognizer fires immediately on finger movement (continuous),
+        // unlike UISwipeGestureRecognizer which waits to confirm the gesture.
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        pan.maximumNumberOfTouches = 1
+        view.addGestureRecognizer(pan)
+        addedGestureRecognizers.append(pan)
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        tap.require(toFail: pan)
         view.addGestureRecognizer(tap)
-        gestureRecognizers.append(tap)
+        addedGestureRecognizers.append(tap)
     }
 
-    @objc private func handleSwipe(_ gesture: UISwipeGestureRecognizer) {
-        guard !isGameOver else { return }
-        switch gesture.direction {
-        case .left:  luna.moveLeft()
-        case .right: luna.moveRight()
-        case .up:    luna.jump()
-        case .down:  luna.slide()
-        default: break
+    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        if gesture.state == .began {
+            panHandled = false
+            return
+        }
+
+        guard gesture.state == .changed, !panHandled, !isGameOver else { return }
+
+        let translation = gesture.translation(in: view)
+        let threshold: CGFloat = 8 // Very low - fires almost instantly
+
+        guard abs(translation.x) > threshold || abs(translation.y) > threshold else { return }
+
+        panHandled = true // One action per touch
+
+        if abs(translation.x) > abs(translation.y) {
+            // Horizontal: left/right lane change
+            if translation.x > 0 { luna.moveRight() }
+            else { luna.moveLeft() }
+        } else {
+            // Vertical: jump/slide (UIKit y is inverted from SpriteKit)
+            if translation.y < 0 { luna.jump() }
+            else { luna.slide() }
         }
     }
 
