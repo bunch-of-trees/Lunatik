@@ -1,12 +1,14 @@
 import SpriteKit
+import UIKit
 
 class GameScene: SKScene, SKPhysicsContactDelegate {
 
     private var luna: LunaCharacter!
     private var background: ParallaxBackground!
     private var obstacleManager: ObstacleManager!
+    private var hud: HUDManager!
+    private var effects: EffectsManager!
 
-    private var scoreLabel: SKLabelNode!
     private var score: Int = 0
     private var distanceScore: CGFloat = 0
 
@@ -22,6 +24,37 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     // Dust particles
     private var dustTimer: TimeInterval = 0
 
+    // Haptics
+    private let hapticLight = UIImpactFeedbackGenerator(style: .light)
+    private let hapticHeavy = UIImpactFeedbackGenerator(style: .heavy)
+    private let hapticSoft = UIImpactFeedbackGenerator(style: .soft)
+
+    private func haptic(_ generator: UIImpactFeedbackGenerator, intensity: CGFloat = 1.0) {
+        guard GameSettings.shared.hapticsEnabled else { return }
+        generator.impactOccurred(intensity: intensity)
+    }
+
+    // Combo system
+    private var comboCount: Int = 0
+    private var lastCollectTime: TimeInterval = 0
+
+    // Speed lines
+    private var speedLineTimer: TimeInterval = 0
+
+    // Pause
+    private var isGamePaused = false
+
+    // Countdown
+    private var isCountingDown = true
+
+    // Power-ups
+    private var hasShield = false
+    private var shieldNode: SKShapeNode?
+    private var magnetActive = false
+    private var magnetTimer: TimeInterval = 0
+    private var doubleScoreActive = false
+    private var doubleScoreTimer: TimeInterval = 0
+
     // MARK: - Scene Lifecycle
 
     override func didMove(to view: SKView) {
@@ -34,11 +67,22 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         view.ignoresSiblingOrder = true
         view.preferredFramesPerSecond = 120
 
-        setupBackground()
+        MissionManager.shared.startRun()
+
+        background = ParallaxBackground(scene: self)
         setupLuna()
-        setupHUD()
+        hud = HUDManager(scene: self)
+        effects = EffectsManager(scene: self)
         obstacleManager = ObstacleManager(scene: self)
         setupGestures(in: view)
+
+        // Start zone 0 music and hook zone changes for crossfade
+        SoundManager.shared.startMusic(zone: 0)
+        background.onZoneChange = { zone in
+            SoundManager.shared.crossfadeToZone(zone)
+        }
+
+        startCountdown()
     }
 
     override func willMove(from view: SKView) {
@@ -49,10 +93,6 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     // MARK: - Setup
-
-    private func setupBackground() {
-        background = ParallaxBackground(scene: self)
-    }
 
     private func setupLuna() {
         luna = LunaCharacter(sceneWidth: size.width)
@@ -65,31 +105,9 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         addChild(luna)
     }
 
-    private func setupHUD() {
-        let hudBar = SKSpriteNode(
-            color: SKColor(white: 0.0, alpha: 0.25),
-            size: CGSize(width: size.width, height: 55)
-        )
-        hudBar.position = CGPoint(x: size.width / 2, y: size.height - 27)
-        hudBar.zPosition = 99
-        addChild(hudBar)
-
-        scoreLabel = SKLabelNode(fontNamed: "AvenirNext-Bold")
-        scoreLabel.fontSize = 30
-        scoreLabel.fontColor = .white
-        scoreLabel.horizontalAlignmentMode = .center
-        scoreLabel.verticalAlignmentMode = .center
-        scoreLabel.position = CGPoint(x: size.width / 2, y: size.height - 30)
-        scoreLabel.zPosition = 100
-        scoreLabel.text = "0"
-        addChild(scoreLabel)
-    }
-
     // MARK: - Gesture Recognizers
 
     private func setupGestures(in view: SKView) {
-        // Pan recognizer fires immediately on finger movement (continuous),
-        // unlike UISwipeGestureRecognizer which waits to confirm the gesture.
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
         pan.maximumNumberOfTouches = 1
         view.addGestureRecognizer(pan)
@@ -106,29 +124,48 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             panHandled = false
             return
         }
+        if gesture.state == .ended || gesture.state == .cancelled {
+            panHandled = false
+            return
+        }
 
-        guard gesture.state == .changed, !panHandled, !isGameOver else { return }
+        guard gesture.state == .changed, !panHandled, !isGameOver, !isGamePaused, !isCountingDown else { return }
 
         let translation = gesture.translation(in: view)
-        let threshold: CGFloat = 8 // Very low - fires almost instantly
+        let threshold: CGFloat = 8
 
         guard abs(translation.x) > threshold || abs(translation.y) > threshold else { return }
 
-        panHandled = true // One action per touch
+        panHandled = true
 
         if abs(translation.x) > abs(translation.y) {
-            // Horizontal: left/right lane change
+            haptic(hapticLight, intensity: 0.5)
             if translation.x > 0 { luna.moveRight() }
             else { luna.moveLeft() }
         } else {
-            // Vertical: jump/slide (UIKit y is inverted from SpriteKit)
+            haptic(hapticLight)
             if translation.y < 0 { luna.jump() }
             else { luna.slide() }
         }
     }
 
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
-        guard !isGameOver else { return }
+        if isGamePaused {
+            togglePause()
+            return
+        }
+
+        guard !isGameOver, !isCountingDown else { return }
+
+        let location = gesture.location(in: view)
+        let sceneLocation = convertPoint(fromView: location)
+        let pauseArea = CGRect(x: 0, y: size.height - 60, width: 72, height: 60)
+        if pauseArea.contains(sceneLocation) {
+            togglePause()
+            return
+        }
+
+        haptic(hapticLight)
         luna.jump()
     }
 
@@ -141,7 +178,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         let deltaTime = min(currentTime - lastUpdateTime, 1.0 / 30.0)
         lastUpdateTime = currentTime
 
-        guard !isGameOver else { return }
+        guard !isGameOver, !isGamePaused, !isCountingDown else { return }
 
         currentSpeed = min(
             currentSpeed + GameConstants.speedIncrement * CGFloat(deltaTime) * 60,
@@ -152,40 +189,52 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         obstacleManager.update(speed: currentSpeed, deltaTime: deltaTime)
 
         distanceScore += currentSpeed * CGFloat(deltaTime) * 0.01
-        updateScore()
+        hud.updateScore(score + Int(distanceScore))
+        background.updateEnvironment(distanceScore: distanceScore)
+        MissionManager.shared.reportDistance(Int(distanceScore))
 
         dustTimer += deltaTime
         if dustTimer > 0.1 {
             dustTimer = 0
-            spawnDust()
+            effects.spawnDust(at: luna.position, lunaIsJumping: luna.isJumping)
         }
-    }
 
-    private func updateScore() {
-        let totalScore = score + Int(distanceScore)
-        scoreLabel.text = "\(totalScore)"
-    }
+        // Combo timeout
+        if comboCount > 0 && lastUpdateTime - lastCollectTime > 1.5 {
+            comboCount = 0
+            hud.hideCombo()
+        }
 
-    // MARK: - Particles
-
-    private func spawnDust() {
-        guard !luna.isJumping else { return }
-        let sz = CGFloat.random(in: 4...7)
-        let dust = SKSpriteNode(color: SKColor(white: 0.7, alpha: CGFloat.random(in: 0.12...0.25)),
-                                size: CGSize(width: sz, height: sz))
-        dust.position = CGPoint(
-            x: luna.position.x + CGFloat.random(in: -12...12),
-            y: luna.position.y - GameConstants.lunaSpriteHeight * 0.4
+        // Power-up timers
+        if magnetActive {
+            magnetTimer -= deltaTime
+            if magnetTimer <= 0 {
+                magnetActive = false
+            } else {
+                applyMagnetEffect()
+            }
+        }
+        if doubleScoreActive {
+            doubleScoreTimer -= deltaTime
+            if doubleScoreTimer <= 0 {
+                doubleScoreActive = false
+            }
+        }
+        hud.updatePowerUpIndicator(
+            shield: hasShield,
+            magnetTimer: magnetActive ? magnetTimer : 0,
+            doubleScoreTimer: doubleScoreActive ? doubleScoreTimer : 0
         )
-        dust.zPosition = 45
-        addChild(dust)
-        dust.run(SKAction.sequence([
-            SKAction.group([
-                SKAction.moveBy(x: CGFloat.random(in: -8...8), y: CGFloat.random(in: 8...20), duration: 0.35),
-                SKAction.fadeOut(withDuration: 0.35)
-            ]),
-            SKAction.removeFromParent()
-        ]))
+
+        // Speed lines at high speed
+        if currentSpeed > 550 {
+            speedLineTimer += deltaTime
+            let rate = 0.08 - Double(currentSpeed - 550) / Double(GameConstants.maxSpeed - 550) * 0.05
+            if speedLineTimer > rate {
+                speedLineTimer = 0
+                effects.spawnSpeedLine()
+            }
+        }
     }
 
     // MARK: - Physics Contact
@@ -200,16 +249,43 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             if luna.isJumping,
                let jumpable = obstacleNode?.userData?["jumpable"] as? Bool,
                jumpable {
+                if obstacleNode?.userData?["nearMiss"] == nil {
+                    obstacleNode?.userData?["nearMiss"] = true
+                    triggerNearMiss(at: obstacleNode?.position ?? luna.position)
+                }
                 return
             }
 
-            if luna.isSliding { return }
+            if luna.isSliding {
+                if obstacleNode?.userData?["nearMiss"] == nil {
+                    obstacleNode?.userData?["nearMiss"] = true
+                    triggerNearMiss(at: obstacleNode?.position ?? luna.position, wasSlide: true)
+                }
+                return
+            }
+
+            if hasShield {
+                hasShield = false
+                shieldNode?.removeFromParent()
+                shieldNode = nil
+                haptic(hapticLight)
+                effects.shieldBreak(at: luna.position)
+                hud.updatePowerUpIndicator(shield: false, magnetTimer: magnetActive ? magnetTimer : 0, doubleScoreTimer: doubleScoreActive ? doubleScoreTimer : 0)
+                return
+            }
 
             handleObstacleHit()
 
         } else if collision == PhysicsCategory.luna | PhysicsCategory.collectible {
             let collectibleNode = contact.bodyA.categoryBitMask == PhysicsCategory.collectible
                 ? contact.bodyA.node : contact.bodyB.node
+
+            if collectibleNode?.name == "powerUp",
+               let powerUpType = collectibleNode?.userData?["powerUpType"] as? PowerUpType {
+                handlePowerUpPickup(type: powerUpType, node: collectibleNode)
+                return
+            }
+
             handleCollectiblePickup(node: collectibleNode)
         }
     }
@@ -218,92 +294,203 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         guard !isGameOver else { return }
         isGameOver = true
 
+        haptic(hapticHeavy)
         SoundManager.shared.playHit()
+        SoundManager.shared.fadeOutMusic(duration: 1.5)
 
-        // Red flash
-        let flash = SKSpriteNode(color: SKColor(red: 1.0, green: 0.15, blue: 0.1, alpha: 0.4), size: size)
-        flash.position = CGPoint(x: size.width / 2, y: size.height / 2)
-        flash.zPosition = 200
-        addChild(flash)
-        flash.run(SKAction.fadeOut(withDuration: 0.4)) { flash.removeFromParent() }
+        self.speed = 0
 
-        // Camera shake
-        var shakeActions: [SKAction] = []
-        for _ in 0..<5 {
-            let dx = CGFloat.random(in: -10...10)
-            let dy = CGFloat.random(in: -10...10)
-            shakeActions.append(SKAction.moveBy(x: dx, y: dy, duration: 0.025))
-            shakeActions.append(SKAction.moveBy(x: -dx, y: -dy, duration: 0.025))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self = self else { return }
+            self.speed = 0.3
+            self.effects.deathSequence(sceneSize: self.size)
+            self.luna.hitAnimation()
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self = self else { return }
+                self.speed = 1.0
+                SoundManager.shared.playGameOver()
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                    self?.transitionToGameOver()
+                }
+            }
         }
-        scene?.run(SKAction.sequence(shakeActions))
-
-        luna.hitAnimation()
-
-        // Game over sound then auto-transition
-        run(SKAction.sequence([
-            SKAction.wait(forDuration: 0.35),
-            SKAction.run { SoundManager.shared.playGameOver() },
-            SKAction.wait(forDuration: 1.0),
-            SKAction.run { [weak self] in self?.transitionToGameOver() }
-        ]))
     }
 
     private func handleCollectiblePickup(node: SKNode?) {
         guard let node = node else { return }
 
-        if let type = node.userData?["type"] as? CollectibleType {
-            score += type.points
+        if lastUpdateTime - lastCollectTime < 1.5 && lastCollectTime > 0 {
+            comboCount = min(comboCount + 1, 10)
         } else {
-            score += 1
+            comboCount = 1
         }
+        lastCollectTime = lastUpdateTime
 
+        let comboMult = max(1, comboCount)
+        let scoreMult = doubleScoreActive ? 2 : 1
+        if let type = node.userData?["type"] as? CollectibleType {
+            score += type.points * comboMult * scoreMult
+            MissionManager.shared.reportCollect(type: type)
+        } else {
+            score += 1 * comboMult * scoreMult
+        }
+        MissionManager.shared.reportCombo(comboCount)
+
+        hud.updateCombo(comboCount)
+
+        haptic(hapticSoft)
         SoundManager.shared.playCollect()
         luna.collectAnimation()
 
-        // Sparkle burst
-        for _ in 0..<5 {
-            let sz = CGFloat.random(in: 4...7)
-            let spark = SKSpriteNode(
-                color: SKColor(red: 1, green: 1, blue: CGFloat.random(in: 0.3...0.8), alpha: 1),
-                size: CGSize(width: sz, height: sz))
-            spark.position = node.position
-            spark.zPosition = 80
-            addChild(spark)
+        effects.sparkleBurst(at: node.position)
 
-            let angle = CGFloat.random(in: 0...(.pi * 2))
-            let dist = CGFloat.random(in: 20...50)
-            spark.run(SKAction.sequence([
-                SKAction.group([
-                    SKAction.moveBy(x: cos(angle) * dist, y: sin(angle) * dist, duration: 0.3),
-                    SKAction.fadeOut(withDuration: 0.3),
-                    SKAction.scale(to: 0.1, duration: 0.3)
-                ]),
-                SKAction.removeFromParent()
+        if let type = node.userData?["type"] as? CollectibleType {
+            effects.scorePopup(text: "+\(type.points)", at: node.position)
+        } else {
+            effects.scorePopup(text: "+1", at: node.position)
+        }
+
+        node.removeFromParent()
+        hud.updateScore(score + Int(distanceScore), pop: true)
+    }
+
+    // MARK: - Near Miss
+
+    private func triggerNearMiss(at position: CGPoint, wasSlide: Bool = false) {
+        score += 3
+        haptic(hapticLight, intensity: 0.7)
+        MissionManager.shared.reportNearMiss()
+        if wasSlide { MissionManager.shared.reportSlideDodge() }
+
+        effects.nearMissPopup(at: position)
+        hud.updateScore(score + Int(distanceScore), pop: true)
+    }
+
+    // MARK: - Power-Ups
+
+    private func handlePowerUpPickup(type: PowerUpType, node: SKNode?) {
+        guard let node = node else { return }
+        haptic(hapticSoft)
+        SoundManager.shared.playCollect()
+        MissionManager.shared.reportPowerUp()
+
+        switch type {
+        case .magnet:
+            magnetActive = true
+            magnetTimer = type.duration
+        case .shield:
+            hasShield = true
+            attachShieldVisual()
+        case .doubleScore:
+            doubleScoreActive = true
+            doubleScoreTimer = type.duration
+        }
+
+        hud.updatePowerUpIndicator(shield: hasShield, magnetTimer: magnetActive ? magnetTimer : 0, doubleScoreTimer: doubleScoreActive ? doubleScoreTimer : 0)
+
+        let popupText: String
+        switch type {
+        case .magnet: popupText = "MAGNET!"
+        case .shield: popupText = "SHIELD!"
+        case .doubleScore: popupText = "2X SCORE!"
+        }
+        effects.powerUpPopup(text: popupText, at: node.position)
+
+        node.removeFromParent()
+        hud.updateScore(score + Int(distanceScore), pop: true)
+    }
+
+    private func applyMagnetEffect() {
+        let magnetRange = GameConstants.magnetRadius
+        enumerateChildNodes(withName: "collectible") { [weak self] node, _ in
+            guard let self = self else { return }
+            let dx = self.luna.position.x - node.position.x
+            let dy = self.luna.position.y - node.position.y
+            let dist = sqrt(dx * dx + dy * dy)
+            if dist < magnetRange && dist > 5 {
+                let pullStrength: CGFloat = 4.0
+                node.position.x += dx / dist * pullStrength
+                node.position.y += dy / dist * pullStrength
+            }
+        }
+    }
+
+    private func attachShieldVisual() {
+        shieldNode?.removeFromParent()
+        let shield = SKShapeNode(circleOfRadius: 40)
+        shield.fillColor = SKColor(red: 0.3, green: 0.6, blue: 1.0, alpha: 0.15)
+        shield.strokeColor = SKColor(red: 0.4, green: 0.7, blue: 1.0, alpha: 0.5)
+        shield.lineWidth = 2.5
+        shield.zPosition = 55
+        luna.addChild(shield)
+        shieldNode = shield
+
+        let pulse = SKAction.sequence([
+            SKAction.fadeAlpha(to: 0.08, duration: 0.6),
+            SKAction.fadeAlpha(to: 0.2, duration: 0.6)
+        ])
+        shield.run(SKAction.repeatForever(pulse))
+    }
+
+    // MARK: - Countdown
+
+    private func startCountdown() {
+        isCountingDown = true
+        let labels = ["3", "2", "1", "GO!"]
+
+        for (i, text) in labels.enumerated() {
+            let delay = TimeInterval(i) * 0.7
+            run(SKAction.sequence([
+                SKAction.wait(forDuration: delay),
+                SKAction.run { [weak self] in
+                    guard let self = self else { return }
+                    let label = SKLabelNode(fontNamed: "AvenirNext-Heavy")
+                    label.text = text
+                    label.fontSize = text == "GO!" ? 64 : 72
+                    label.fontColor = text == "GO!"
+                        ? SKColor(red: 0.3, green: 1.0, blue: 0.4, alpha: 1.0)
+                        : .white
+                    label.position = CGPoint(x: self.size.width / 2, y: self.size.height / 2)
+                    label.zPosition = 200
+                    label.setScale(0.3)
+                    label.alpha = 0
+                    self.addChild(label)
+
+                    label.run(SKAction.sequence([
+                        SKAction.group([
+                            SKAction.scale(to: 1.0, duration: 0.25),
+                            SKAction.fadeIn(withDuration: 0.15)
+                        ]),
+                        SKAction.wait(forDuration: 0.25),
+                        SKAction.group([
+                            SKAction.scale(to: 1.5, duration: 0.2),
+                            SKAction.fadeOut(withDuration: 0.2)
+                        ]),
+                        SKAction.removeFromParent()
+                    ]))
+                }
             ]))
         }
 
-        // Score popup
-        let popup = SKLabelNode(fontNamed: "AvenirNext-Bold")
-        if let type = node.userData?["type"] as? CollectibleType {
-            popup.text = "+\(type.points)"
-        } else {
-            popup.text = "+1"
-        }
-        popup.fontSize = 22
-        popup.fontColor = .yellow
-        popup.position = node.position
-        popup.zPosition = 80
-        addChild(popup)
-        popup.run(SKAction.sequence([
-            SKAction.group([
-                SKAction.moveBy(x: 0, y: 55, duration: 0.45),
-                SKAction.fadeOut(withDuration: 0.45)
-            ]),
-            SKAction.removeFromParent()
+        run(SKAction.sequence([
+            SKAction.wait(forDuration: TimeInterval(labels.count) * 0.7),
+            SKAction.run { [weak self] in
+                self?.isCountingDown = false
+            }
         ]))
+    }
 
-        node.removeFromParent()
-        updateScore()
+    // MARK: - Pause
+
+    private func togglePause() {
+        isGamePaused.toggle()
+        if isGamePaused {
+            hud.showPause()
+        } else {
+            hud.hidePause()
+        }
     }
 
     // MARK: - Transition
@@ -317,11 +504,15 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             UserDefaults.standard.set(finalScore, forKey: "LunatikHighScore")
         }
 
+        let completedMissions = MissionManager.shared.endRun(finalScore: finalScore)
+
         let gameOverScene = GameOverScene(size: size)
         gameOverScene.scaleMode = scaleMode
         gameOverScene.finalScore = finalScore
         gameOverScene.highScore = max(finalScore, highScore)
+        gameOverScene.completedMissions = completedMissions
+        gameOverScene.bonesEarned = MissionManager.shared.runBonesEarned
 
-        view?.presentScene(gameOverScene, transition: SKTransition.fade(withDuration: 0.5))
+        view?.presentScene(gameOverScene, transition: SKTransition.fade(with: .black, duration: 0.5))
     }
 }

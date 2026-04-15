@@ -18,6 +18,10 @@
 		AA000009002000AA /* ParallaxBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000009001000AA /* ParallaxBackground.swift */; };
 		AA00000A002000AA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA00000A001000AA /* Assets.xcassets */; };
 		AA00000B002000AA /* SoundManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000B001000AA /* SoundManager.swift */; };
+		AA00000C002000AA /* MissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000C001000AA /* MissionManager.swift */; };
+		AA00000D002000AA /* HUDManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000D001000AA /* HUDManager.swift */; };
+		AA00000E002000AA /* EffectsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000E001000AA /* EffectsManager.swift */; };
+		AA00000F002000AA /* SettingsOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000F001000AA /* SettingsOverlay.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +37,10 @@
 		AA000009001000AA /* ParallaxBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParallaxBackground.swift; sourceTree = "<group>"; };
 		AA00000A001000AA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA00000B001000AA /* SoundManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundManager.swift; sourceTree = "<group>"; };
+		AA00000C001000AA /* MissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MissionManager.swift; sourceTree = "<group>"; };
+		AA00000D001000AA /* HUDManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HUDManager.swift; sourceTree = "<group>"; };
+		AA00000E001000AA /* EffectsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectsManager.swift; sourceTree = "<group>"; };
+		AA00000F001000AA /* SettingsOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsOverlay.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +83,10 @@
 				AA000007001000AA /* ObstacleManager.swift */,
 				AA000009001000AA /* ParallaxBackground.swift */,
 				AA00000B001000AA /* SoundManager.swift */,
+				AA00000C001000AA /* MissionManager.swift */,
+				AA00000D001000AA /* HUDManager.swift */,
+				AA00000E001000AA /* EffectsManager.swift */,
+				AA00000F001000AA /* SettingsOverlay.swift */,
 				AA00000A001000AA /* Assets.xcassets */,
 			);
 			path = Lunatik;
@@ -159,6 +171,10 @@
 				AA000008002000AA /* GameConfig.swift in Sources */,
 				AA000009002000AA /* ParallaxBackground.swift in Sources */,
 				AA00000B002000AA /* SoundManager.swift in Sources */,
+				AA00000C002000AA /* MissionManager.swift in Sources */,
+				AA00000D002000AA /* HUDManager.swift in Sources */,
+				AA00000E002000AA /* EffectsManager.swift in Sources */,
+				AA00000F002000AA /* SettingsOverlay.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

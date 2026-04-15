@@ -24,7 +24,7 @@ enum Lane: Int, CaseIterable {
     func xAtDepth(sceneWidth: CGFloat, depthProgress: CGFloat) -> CGFloat {
         let centerX = sceneWidth / 2.0
         let fullOffset = xPosition(sceneWidth: sceneWidth) - centerX
-        let perspectiveScale = 0.25 + 0.75 * depthProgress
+        let perspectiveScale = 0.38 + 0.62 * depthProgress
         return centerX + fullOffset * perspectiveScale
     }
 
@@ -52,14 +52,61 @@ enum ObstacleType: CaseIterable {
     case fireHydrant
     case trashCan
     case cone
+    case overheadBarrier
 
     var isJumpable: Bool {
         switch self {
         case .fireHydrant: return true
         case .trashCan: return false
         case .cone: return true
+        case .overheadBarrier: return false
         }
     }
+
+    /// Must slide under — jumping won't help
+    var requiresSlide: Bool {
+        switch self {
+        case .overheadBarrier: return true
+        default: return false
+        }
+    }
+}
+
+// MARK: - Power-Up Types
+enum PowerUpType: CaseIterable {
+    case magnet
+    case shield
+    case doubleScore
+
+    var duration: TimeInterval {
+        switch self {
+        case .magnet: return 8.0
+        case .shield: return 0 // single-use, no timer
+        case .doubleScore: return 10.0
+        }
+    }
+}
+
+// MARK: - User Settings
+class GameSettings {
+    static let shared = GameSettings()
+
+    var sfxEnabled: Bool {
+        get { !UserDefaults.standard.bool(forKey: "LunatikSFXDisabled") }
+        set { UserDefaults.standard.set(!newValue, forKey: "LunatikSFXDisabled") }
+    }
+
+    var musicEnabled: Bool {
+        get { !UserDefaults.standard.bool(forKey: "LunatikMusicDisabled") }
+        set { UserDefaults.standard.set(!newValue, forKey: "LunatikMusicDisabled") }
+    }
+
+    var hapticsEnabled: Bool {
+        get { !UserDefaults.standard.bool(forKey: "LunatikHapticsDisabled") }
+        set { UserDefaults.standard.set(!newValue, forKey: "LunatikHapticsDisabled") }
+    }
+
+    private init() {}
 }
 
 // MARK: - Game Constants
@@ -91,6 +138,10 @@ struct GameConstants {
     static let laneSwitchDuration: TimeInterval = 0.09
 
     // Perspective
-    static let farScale: CGFloat = 0.3
+    static let farScale: CGFloat = 0.42
     static let nearScale: CGFloat = 1.0
+
+    // Power-ups
+    static let powerUpSpawnChance: Double = 0.06
+    static let magnetRadius: CGFloat = 120.0
 }

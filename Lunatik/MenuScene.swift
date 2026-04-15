@@ -2,6 +2,8 @@ import SpriteKit
 
 class MenuScene: SKScene {
 
+    private var settingsOverlay: SettingsOverlay?
+
     override func didMove(to view: SKView) {
         backgroundColor = SKColor(red: 0.15, green: 0.25, blue: 0.45, alpha: 1.0)
 
@@ -10,6 +12,11 @@ class MenuScene: SKScene {
         setupLunaSprite()
         setupTapToStart()
         setupHighScore()
+        setupMissions()
+        setupSettingsButton()
+
+        // Night ambient for menu atmosphere
+        SoundManager.shared.startMusic(zone: 3)
     }
 
     private func setupBackground() {
@@ -110,7 +117,6 @@ class MenuScene: SKScene {
         sprite.zPosition = 20
         addChild(sprite)
 
-        // Gentle bounce
         let bounce = SKAction.sequence([
             SKAction.moveBy(x: 0, y: 12, duration: 0.7),
             SKAction.moveBy(x: 0, y: -12, duration: 0.7)
@@ -133,9 +139,8 @@ class MenuScene: SKScene {
         ])
         label.run(SKAction.repeatForever(fade))
 
-        // Swipe hints
         let hints = SKLabelNode(fontNamed: "AvenirNext-Regular")
-        hints.text = "Swipe to dodge! ← → ↑ ↓"
+        hints.text = "Swipe to dodge! \u{2190} \u{2192} \u{2191} \u{2193}"
         hints.fontSize = 14
         hints.fontColor = SKColor(white: 1.0, alpha: 0.5)
         hints.position = CGPoint(x: size.width / 2, y: size.height * 0.15)
@@ -145,9 +150,18 @@ class MenuScene: SKScene {
 
     private func setupHighScore() {
         let hs = UserDefaults.standard.integer(forKey: "LunatikHighScore")
-        if hs > 0 {
+        let bones = MissionManager.shared.totalBones
+
+        var infoText = ""
+        if hs > 0 { infoText += "Best: \(hs)" }
+        if bones > 0 {
+            if !infoText.isEmpty { infoText += "  |  " }
+            infoText += "Bones: \(bones)"
+        }
+
+        if !infoText.isEmpty {
             let label = SKLabelNode(fontNamed: "AvenirNext-Medium")
-            label.text = "Best: \(hs)"
+            label.text = infoText
             label.fontSize = 16
             label.fontColor = SKColor(white: 1.0, alpha: 0.55)
             label.position = CGPoint(x: size.width / 2, y: size.height * 0.11)
@@ -156,9 +170,64 @@ class MenuScene: SKScene {
         }
     }
 
+    private func setupMissions() {
+        let missions = MissionManager.shared.activeMissions
+        guard !missions.isEmpty else { return }
+
+        var yPos = size.height * 0.065
+        for mission in missions.prefix(3).reversed() {
+            let label = SKLabelNode(fontNamed: "AvenirNext-Regular")
+            label.text = "\(mission.description) (\(mission.progressText))"
+            label.fontSize = 11
+            label.fontColor = SKColor(white: 1.0, alpha: 0.4)
+            label.position = CGPoint(x: size.width / 2, y: yPos)
+            label.zPosition = 50
+            addChild(label)
+            yPos += 16
+        }
+
+        let header = SKLabelNode(fontNamed: "AvenirNext-Medium")
+        header.text = "MISSIONS"
+        header.fontSize = 12
+        header.fontColor = SKColor(white: 1.0, alpha: 0.5)
+        header.position = CGPoint(x: size.width / 2, y: yPos)
+        header.zPosition = 50
+        addChild(header)
+    }
+
+    private func setupSettingsButton() {
+        let gear = SKLabelNode(fontNamed: "AvenirNext-Bold")
+        gear.text = "\u{2699}"
+        gear.fontSize = 30
+        gear.fontColor = SKColor(white: 1.0, alpha: 0.6)
+        gear.name = "settingsButton"
+        gear.position = CGPoint(x: size.width - 36, y: size.height * 0.92)
+        gear.zPosition = 50
+        addChild(gear)
+    }
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
+        let location = touch.location(in: self)
+
+        // Handle settings overlay taps first
+        if let overlay = settingsOverlay, overlay.isVisible {
+            _ = overlay.handleTap(at: location)
+            return
+        }
+
+        // Check if gear icon was tapped
+        let tappedNodes = nodes(at: location)
+        if tappedNodes.contains(where: { $0.name == "settingsButton" }) {
+            settingsOverlay = SettingsOverlay(scene: self)
+            settingsOverlay?.show()
+            return
+        }
+
+        // Start game
+        SoundManager.shared.stopMusic()
         let gameScene = GameScene(size: size)
         gameScene.scaleMode = scaleMode
-        view?.presentScene(gameScene, transition: SKTransition.doorway(withDuration: 0.8))
+        view?.presentScene(gameScene, transition: SKTransition.fade(with: .black, duration: 0.6))
     }
 }
